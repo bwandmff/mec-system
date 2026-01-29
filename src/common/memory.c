@@ -24,25 +24,37 @@ static struct {
     bool initialized;
 } g_mem_pool = { NULL, NULL, 0, PTHREAD_MUTEX_INITIALIZER, false };
 
+// 静态内存池范围标记
+static void *g_pool_start = NULL;
+static void *g_pool_end = NULL;
+
 static void mec_pool_init() {
     pthread_mutex_lock(&g_mem_pool.lock);
     if (!g_mem_pool.initialized) {
-        // 初始分配 16 个块
-        for (int i = 0; i < 16; i++) {
-            mem_block_t *block = (mem_block_t *)malloc(sizeof(mem_block_t));
-            if (block) {
-                block->next = g_mem_pool.free_list;
-                g_mem_pool.free_list = block;
+        // 一次性申请大块内存作为池，便于地址范围判断
+        size_t total_size = POOL_MAX_BLOCKS * sizeof(mem_block_t);
+        g_pool_start = malloc(total_size);
+        if (g_pool_start) {
+            g_pool_end = (uint8_t*)g_pool_start + total_size;
+            
+            // 链接链表
+            mem_block_t *current = (mem_block_t *)g_pool_start;
+            for (int i = 0; i < POOL_MAX_BLOCKS - 1; i++) {
+                current[i].next = &current[i+1];
             }
+            current[POOL_MAX_BLOCKS - 1].next = NULL;
+            g_mem_pool.free_list = current;
+            
+            LOG_INFO("Memory Pool: Initialized with %d blocks (Block size: %zu bytes)", POOL_MAX_BLOCKS, POOL_BLOCK_SIZE);
+        } else {
+            LOG_ERROR("Memory Pool: Failed to allocate pool memory");
         }
         g_mem_pool.initialized = true;
-        LOG_INFO("Memory Pool: Initialized with 16 blocks (Block size: %zu bytes)", POOL_BLOCK_SIZE);
     }
     pthread_mutex_unlock(&g_mem_pool.lock);
 }
 
 void* mec_malloc(size_t size) {
-    // 如果申请的大小刚好符合我们的块大小，则从池中获取
     if (size <= POOL_BLOCK_SIZE) {
         if (!g_mem_pool.initialized) mec_pool_init();
 
@@ -56,36 +68,28 @@ void* mec_malloc(size_t size) {
         }
         pthread_mutex_unlock(&g_mem_pool.lock);
         
-        // 池耗尽，回退到普通 malloc 并警告
         LOG_WARN("Memory Pool: Pool exhausted, falling back to heap");
     }
     
     return malloc(size);
 }
 
-void* mec_calloc(size_t nmemb, size_t size) {
-    void *ptr = mec_malloc(nmemb * size);
-    if (ptr) memset(ptr, 0, nmemb * size);
-    return ptr;
-}
-
-void* mec_realloc(void *ptr, size_t size) {
-    // 简单实现：暂不支持池内 realloc，直接走普通 realloc
-    // 在我们的系统中，尽量通过预分配 capacity 避免 realloc
-    return realloc(ptr, size);
-}
-
 void mec_free(void *ptr) {
     if (!ptr) return;
 
-    // 检查指针是否属于我们的池
-    // 注意：这里的检查比较简化。在生产环境通常会维护一个地址范围
-    // 为了极致性能，我们目前在 track_list 中显式管理。
-    // 如果确定是池内存，将其回收到自由链表。
+    // 检查指针是否属于内存池范围
+    if (g_mem_pool.initialized && ptr >= g_pool_start && ptr < g_pool_end) {
+        // 计算块起始地址 (假设 data 是 mem_block_t 的第一个成员)
+        mem_block_t *block = (mem_block_t *)ptr;
+        
+        pthread_mutex_lock(&g_mem_pool.lock);
+        block->next = g_mem_pool.free_list;
+        g_mem_pool.free_list = block;
+        g_mem_pool.blocks_in_use--;
+        pthread_mutex_unlock(&g_mem_pool.lock);
+        return;
+    }
     
-    // 我们采取一种更稳妥的做法：
-    // 如果在我们的自由分配逻辑中确认为池内存（这里通过地址范围判断）
-    // 此处仅做示例实现逻辑：
     free(ptr);
 }
 
@@ -104,4 +108,32 @@ void mec_free_tracks(target_track_t *ptr) {
     pthread_mutex_unlock(&g_mem_pool.lock);
     
     free(ptr);
+}
+
+void* mec_calloc(size_t nmemb, size_t size) {
+    void *ptr = mec_malloc(nmemb * size);
+    if (ptr) memset(ptr, 0, nmemb * size);
+    return ptr;
+}
+
+void* mec_realloc(void *ptr, size_t size) {
+    // 简单实现：暂不支持池内 realloc，直接走普通 realloc
+    // 如果 ptr 在池内，这种做法是危险的，需要迁移数据。
+    // 但鉴于我们目前的使用场景（track_list扩容），通常是大块内存，
+    // 大块内存我们走的是系统 malloc，所以这里暂且可以直接 realloc。
+    // 如果 ptr 是小块池内内存，这里会崩溃。
+    // 真正的修复应该判断 range。
+    
+    if (g_mem_pool.initialized && ptr >= g_pool_start && ptr < g_pool_end) {
+        // 是池内内存，必须分配新块（或堆内存）并拷贝
+        // 但池块大小固定，realloc 通常意味着变大，所以只能去堆
+        void *new_ptr = malloc(size);
+        if (new_ptr) {
+            memcpy(new_ptr, ptr, POOL_BLOCK_SIZE); // 只能拷贝这么多了
+            mec_free(ptr); // 归还旧块
+        }
+        return new_ptr;
+    }
+    
+    return realloc(ptr, size);
 }

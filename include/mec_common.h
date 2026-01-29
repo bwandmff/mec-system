@@ -44,12 +44,14 @@ typedef struct {
     int sensor_id;
 } target_track_t;
 
+#include <stdatomic.h>
+
 struct track_list_t {
     target_track_t *tracks;
     int count;
     int capacity;
-    int ref_count;            // 引用计数
-    pthread_mutex_t ref_lock; // 保护计数的锁
+    atomic_int ref_count;     // 引用计数 (Atomic)
+    // pthread_mutex_t ref_lock; // 移除锁
 };
 
 // 性能监控统计
