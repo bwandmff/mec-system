@@ -44,7 +44,16 @@ typedef struct {
     target_track_t *tracks;
     int count;
     int capacity;
+    int ref_count;            // 引用计数
+    pthread_mutex_t ref_lock; // 保护计数的锁
 } track_list_t;
+
+// 性能监控统计
+typedef struct {
+    double fps;               // 当前处理帧率
+    double latency_ms;        // 平均处理时延
+    size_t mem_used;          // 内存占用
+} mec_metrics_t;
 
 // Memory management
 void* mec_malloc(size_t size);
@@ -52,50 +61,12 @@ void* mec_calloc(size_t nmemb, size_t size);
 void* mec_realloc(void *ptr, size_t size);
 void mec_free(void *ptr);
 
-// Configuration management
-typedef struct config_t config_t;
-config_t* config_load(const char *filename);
-void config_free(config_t *config);
-const char* config_get_string(config_t *config, const char *key, const char *default_value);
-int config_get_int(config_t *config, const char *key, int default_value);
-double config_get_double(config_t *config, const char *key, double default_value);
-
-// Logging
-typedef enum {
-    LOG_DEBUG = 0,
-    LOG_INFO = 1,
-    LOG_WARN = 2,
-    LOG_ERROR = 3
-} log_level_t;
-
-void log_init(const char *filename, log_level_t level);
-void log_message(log_level_t level, const char *format, ...);
-void log_cleanup();
-
-#define LOG_DEBUG(...) log_message(LOG_DEBUG, __VA_ARGS__)
-#define LOG_INFO(...) log_message(LOG_INFO, __VA_ARGS__)
-#define LOG_WARN(...) log_message(LOG_WARN, __VA_ARGS__)
-#define LOG_ERROR(...) log_message(LOG_ERROR, __VA_ARGS__)
-
-// Thread utilities
-typedef struct {
-    pthread_t thread;
-    pthread_mutex_t mutex;
-    pthread_cond_t cond;
-    int running;
-    void *data;
-} thread_context_t;
-
-int thread_create(thread_context_t *ctx, void *(*start_routine)(void*), void *arg);
-void thread_destroy(thread_context_t *ctx);
-void thread_lock(thread_context_t *ctx);
-void thread_unlock(thread_context_t *ctx);
-void thread_wait(thread_context_t *ctx);
-void thread_signal(thread_context_t *ctx);
+// ... (config and logging)
 
 // Track list utilities
 track_list_t* track_list_create(int initial_capacity);
-void track_list_free(track_list_t *list);
+void track_list_retain(track_list_t *list);  // 增加引用
+void track_list_release(track_list_t *list); // 减少引用（计数为0时释放）
 int track_list_add(track_list_t *list, const target_track_t *track);
 void track_list_clear(track_list_t *list);
 

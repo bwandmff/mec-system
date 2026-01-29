@@ -5,6 +5,8 @@
 #include "mec_simulator.h"
 #include "mec_queue.h"
 #include "mec_v2x.h"
+#include "mec_metrics.h"
+#include "mec_monitor.h"
 #include <signal.h>
 
 static int running = 1;
@@ -34,8 +36,9 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    // 2. 初始化日志系统
+    // 2. 初始化日志系统与性能监控
     log_init("/var/log/mec_system.log", LOG_INFO);
+    metrics_init();
     LOG_INFO("MEC System starting... (Mode: %s)", sim_mode ? "Simulation" : "Real Sensors");
     
     signal(SIGINT, signal_handler);
@@ -115,6 +118,12 @@ int main(int argc, char *argv[]) {
         LOG_ERROR("Failed to start fusion processor");
         goto cleanup;
     }
+
+    // --- 新增：启动监控服务 ---
+    monitor_config_t mon_cfg = {0};
+    strncpy(mon_cfg.socket_path, "/tmp/mec_system.sock", sizeof(mon_cfg.socket_path)-1);
+    mon_cfg.fusion_proc = fusion_proc;
+    mec_monitor_t *monitor_service = monitor_start_service(&mon_cfg);
     
     LOG_INFO("MEC System Running in Asynchronous Mode (Queue: %d msgs limit)", 50);
     
@@ -138,12 +147,19 @@ int main(int argc, char *argv[]) {
         
         // 从队列中弹出数据，设置 500ms 超时，避免死等
         if (mec_queue_pop(msg_queue, &incoming_msg, 500) == 0) {
+            struct timeval t1, t2;
+            gettimeofday(&t1, NULL);
+
             // 拿到数据，立刻投喂给融合引擎
             fusion_processor_add_tracks(fusion_proc, incoming_msg.tracks, incoming_msg.sensor_id);
             
-            // 重要：队列 pop 出来的 tracks 所有权转移给了主循环，处理完需手动释放
-            track_list_free(incoming_msg.tracks);
+            // 重要：队列 pop 出来的 tracks 所有权转移给了主循环，处理完需释放引用
+            track_list_release(incoming_msg.tracks);
             
+            gettimeofday(&t2, NULL);
+            double lat = (t2.tv_sec - t1.tv_sec) * 1000.0 + (t2.tv_usec - t1.tv_usec) / 1000.0;
+            metrics_record_frame(lat);
+
             // 实时输出结果
             track_list_t *fused = fusion_processor_get_tracks(fusion_proc);
             if (fused && fused->count > 0) {
@@ -164,6 +180,7 @@ int main(int argc, char *argv[]) {
             if (now - last_hb >= 5) {
                 LOG_INFO("System Heartbeat: [Queue Size: %d] [Active Tracks: %d]", 
                          mec_queue_size(msg_queue), fusion_proc->track_count);
+                metrics_report();
                 last_hb = now;
             }
 
@@ -180,6 +197,7 @@ int main(int argc, char *argv[]) {
     
 cleanup:
     LOG_INFO("MEC System shutting down...");
+    if (monitor_service) monitor_stop_service(monitor_service);
     if (simulator) simulator_destroy(simulator);
     if (video_proc) { video_processor_stop(video_proc); video_processor_destroy(video_proc); }
     if (radar_proc) { radar_processor_stop(radar_proc); radar_processor_destroy(radar_proc); }

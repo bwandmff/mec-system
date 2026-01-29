@@ -46,11 +46,11 @@ void mec_queue_destroy(mec_queue_t *queue) {
     if (!queue) return;
 
     pthread_mutex_lock(&queue->mutex);
-    // 清理缓冲区中积压的动态内存（主要是 track_list）
+    // 清理缓冲区中积压的动态内存
     for (int i = 0; i < queue->count; i++) {
         int idx = (queue->head + i) % queue->capacity;
         if (queue->buffer[idx].tracks) {
-            track_list_free(queue->buffer[idx].tracks);
+            track_list_release(queue->buffer[idx].tracks);
         }
     }
     pthread_mutex_unlock(&queue->mutex);
@@ -76,21 +76,18 @@ int mec_queue_push(mec_queue_t *queue, const mec_msg_t *msg) {
         return -1; 
     }
 
-    // 执行深拷贝：防止生产者在 push 后修改原数据
-    track_list_t *copy = track_list_create(msg->tracks->count);
-    for (int i = 0; i < msg->tracks->count; i++) {
-        track_list_add(copy, &msg->tracks->tracks[i]);
-    }
+    // --- 零拷贝改进：增加引用计数而非深拷贝 ---
+    track_list_retain(msg->tracks);
 
     // 存入环形缓冲区
     queue->buffer[queue->tail].sensor_id = msg->sensor_id;
     queue->buffer[queue->tail].timestamp = msg->timestamp;
-    queue->buffer[queue->tail].tracks = copy;
+    queue->buffer[queue->tail].tracks = msg->tracks;
 
     queue->tail = (queue->tail + 1) % queue->capacity;
     queue->count++;
 
-    // 通知正在等待的消费者（Fusion线程）
+    // 通知正在等待的消费者
     pthread_cond_signal(&queue->not_empty);
     pthread_mutex_unlock(&queue->mutex);
 

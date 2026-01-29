@@ -23,8 +23,8 @@ mec_simulator_t* simulator_create(const simulator_config_t *config) {
 void simulator_destroy(mec_simulator_t *sim) {
     if (!sim) return;
     simulator_stop(sim);
-    track_list_free(sim->video_tracks);
-    track_list_free(sim->radar_tracks);
+    track_list_release(sim->video_tracks);
+    track_list_release(sim->radar_tracks);
     mec_free(sim);
 }
 

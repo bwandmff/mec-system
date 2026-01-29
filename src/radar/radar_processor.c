@@ -29,7 +29,7 @@ void radar_processor_destroy(radar_processor_t *processor) {
     if (processor->fd >= 0) {
         close(processor->fd);
     }
-    track_list_free(processor->output_tracks);
+    track_list_release(processor->output_tracks);
     mec_free(processor);
 }
 

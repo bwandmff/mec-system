@@ -67,7 +67,7 @@ fusion_processor_t* fusion_processor_create(const fusion_config_t *config) {
 void fusion_processor_destroy(fusion_processor_t *processor) {
     if (!processor) return;
     fusion_processor_stop(processor);
-    track_list_free(processor->output_tracks);
+    track_list_release(processor->output_tracks);
     mec_free(processor->tracks);
     mec_free(processor);
 }

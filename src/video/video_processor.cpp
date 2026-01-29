@@ -30,7 +30,7 @@ void video_processor_destroy(video_processor_t *processor) {
     if (!processor) return;
     
     video_processor_stop(processor);
-    track_list_free(processor->output_tracks);
+    track_list_release(processor->output_tracks);
     mec_free(processor);
 }
 
@@ -165,7 +165,7 @@ void* video_processing_thread(void *arg) {
         usleep(33333); // ~30 FPS
     }
     
-    track_list_free(previous_tracks);
+    track_list_release(previous_tracks);
     cap.release();
     return NULL;
 }
