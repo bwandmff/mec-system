@@ -1,4 +1,5 @@
 #include "mec_common.h"
+#include "mec_logging.h"
 #include <stdarg.h>
 #include <time.h>
 

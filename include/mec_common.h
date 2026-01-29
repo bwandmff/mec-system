@@ -9,6 +9,10 @@
 #include <sys/time.h>
 #include <math.h>
 #include <errno.h>
+#include <ctype.h>
+
+// Forward declarations
+typedef struct track_list_t track_list_t;
 
 // Common data structures
 typedef struct {
@@ -40,13 +44,13 @@ typedef struct {
     int sensor_id;
 } target_track_t;
 
-typedef struct {
+struct track_list_t {
     target_track_t *tracks;
     int count;
     int capacity;
     int ref_count;            // 引用计数
     pthread_mutex_t ref_lock; // 保护计数的锁
-} track_list_t;
+};
 
 // 性能监控统计
 typedef struct {
@@ -61,13 +65,15 @@ void* mec_calloc(size_t nmemb, size_t size);
 void* mec_realloc(void *ptr, size_t size);
 void mec_free(void *ptr);
 
-// ... (config and logging)
-
 // Track list utilities
 track_list_t* track_list_create(int initial_capacity);
 void track_list_retain(track_list_t *list);  // 增加引用
 void track_list_release(track_list_t *list); // 减少引用（计数为0时释放）
 int track_list_add(track_list_t *list, const target_track_t *track);
 void track_list_clear(track_list_t *list);
+
+#include "mec_logging.h"
+#include "mec_thread.h"
+#include "mec_config.h"
 
 #endif // MEC_COMMON_H

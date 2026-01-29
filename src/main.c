@@ -25,7 +25,7 @@ void signal_handler(int sig) {
 
 int main(int argc, char *argv[]) {
     int sim_mode = 0;
-    char *config_path = "/etc/mec/mec.conf";
+    char *config_path = "config/mec.conf";
 
     // 1. 命令行参数解析
     for (int i = 1; i < argc; i++) {
@@ -37,7 +37,7 @@ int main(int argc, char *argv[]) {
     }
 
     // 2. 初始化日志系统与性能监控
-    log_init("/var/log/mec_system.log", LOG_INFO);
+    log_init("mec_system.log", LOG_INFO);
     metrics_init();
     LOG_INFO("MEC System starting... (Mode: %s)", sim_mode ? "Simulation" : "Real Sensors");
     
