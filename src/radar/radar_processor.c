@@ -143,6 +143,16 @@ void* radar_processing_thread(void *arg) {
             if (radar_convert_to_track(&detection, &processor->config, &track) == 0) {
                 thread_lock(&processor->thread_ctx);
                 track_list_add(processor->output_tracks, &track);
+                
+                // --- 新增：将结果推送至异步队列 ---
+                if (processor->config.target_queue) {
+                    mec_msg_t msg;
+                    msg.sensor_id = processor->config.radar_id;
+                    msg.tracks = processor->output_tracks; 
+                    msg.timestamp = detection.timestamp;
+                    mec_queue_push(processor->config.target_queue, &msg);
+                }
+                
                 thread_unlock(&processor->thread_ctx);
             }
         }
@@ -153,46 +163,63 @@ void* radar_processing_thread(void *arg) {
     return NULL;
 }
 
+/**
+ * @brief 鲁棒的雷达数据读取逻辑（基于有限状态机 DFA）
+ * 
+ * 能够自动处理串口字节对齐、丢包和干扰，确保只有完整且校验通过的数据包才会进入算法层。
+ */
 int radar_read_data(radar_processor_t *processor, radar_detection_t *detection) {
     if (!processor || !detection || processor->fd < 0) return -1;
     
-    // Simplified radar data reading - in practice would parse specific protocol
-    static unsigned char buffer[1024];
-    static int buffer_pos = 0;
+    // 状态定义
+    typedef enum { STATE_IDLE, STATE_HEAD1, STATE_HEAD2, STATE_DATA, STATE_CHECK } parse_state_t;
+    static parse_state_t state = STATE_IDLE;
+    static unsigned char frame_buf[16];
+    static int frame_idx = 0;
     
-    fd_set read_fds;
-    struct timeval timeout;
-    
-    FD_ZERO(&read_fds);
-    FD_SET(processor->fd, &read_fds);
-    timeout.tv_sec = 0;
-    timeout.tv_usec = 10000; // 10ms timeout
-    
-    if (select(processor->fd + 1, &read_fds, NULL, NULL, &timeout) <= 0) {
-        return -1;
-    }
-    
-    int bytes_read = read(processor->fd, buffer + buffer_pos, sizeof(buffer) - buffer_pos);
-    if (bytes_read <= 0) return -1;
-    
-    buffer_pos += bytes_read;
-    
-    // Look for complete packet (simplified - assume fixed size)
-    if (buffer_pos >= 16) {
-        // Parse radar data (simplified format)
-        static int target_id = 2000;
-        detection->target_id = target_id++;
-        detection->range = ((buffer[0] << 8) | buffer[1]) * 0.1; // Convert to meters
-        detection->angle = ((buffer[2] << 8) | buffer[3]) * 0.1 - 180.0; // Convert to degrees
-        detection->velocity = ((buffer[4] << 8) | buffer[5]) * 0.1; // Convert to m/s
-        detection->rcs = ((buffer[6] << 8) | buffer[7]) * 0.1; // Convert to dBm²
-        gettimeofday(&detection->timestamp, NULL);
-        
-        // Move remaining data to beginning of buffer
-        buffer_pos -= 16;
-        memmove(buffer, buffer + 16, buffer_pos);
-        
-        return 0;
+    unsigned char ch;
+    // 每次从内核缓冲区读取一个字节进行状态机处理
+    while (read(processor->fd, &ch, 1) > 0) {
+        switch (state) {
+            case STATE_IDLE:
+                if (ch == 0xAA) state = STATE_HEAD1;
+                break;
+            case STATE_HEAD1:
+                if (ch == 0x55) {
+                    state = STATE_DATA;
+                    frame_idx = 0;
+                } else {
+                    state = STATE_IDLE;
+                }
+                break;
+            case STATE_DATA:
+                frame_buf[frame_idx++] = ch;
+                if (frame_idx >= 14) { // 假设数据段为 14 字节
+                    state = STATE_CHECK;
+                }
+                break;
+            case STATE_CHECK:
+                // 简单的校验和检查 (Sum Check)
+                unsigned char checksum = 0;
+                for (int i = 0; i < 14; i++) checksum ^= frame_buf[i];
+                
+                if (ch == checksum) {
+                    // 校验通过，解析数据
+                    detection->target_id = (frame_buf[0] << 8) | frame_buf[1];
+                    detection->range = ((frame_buf[2] << 8) | frame_buf[3]) * 0.1;
+                    detection->angle = ((frame_buf[4] << 8) | frame_buf[5]) * 0.1 - 180.0;
+                    detection->velocity = ((frame_buf[6] << 8) | frame_buf[7]) * 0.1;
+                    detection->rcs = ((frame_buf[8] << 8) | frame_buf[9]) * 0.1 - 50.0;
+                    gettimeofday(&detection->timestamp, NULL);
+                    
+                    state = STATE_IDLE;
+                    return 0; // 成功解析一帧
+                } else {
+                    LOG_WARN("Radar: Checksum error (Exp: 0x%02X, Got: 0x%02X)", checksum, ch);
+                    state = STATE_IDLE;
+                }
+                break;
+        }
     }
     
     return -1;

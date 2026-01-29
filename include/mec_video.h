@@ -2,6 +2,7 @@
 #define MEC_VIDEO_H
 
 #include "mec_common.h"
+#include "mec_queue.h"
 
 // Video stream configuration
 typedef struct {
@@ -10,6 +11,7 @@ typedef struct {
     int height;
     int fps;
     int camera_id;
+    mec_queue_t *target_queue; // 目标消息队列
 } video_config_t;
 
 // Perspective transformation parameters

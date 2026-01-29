@@ -150,6 +150,15 @@ void* video_processing_thread(void *arg) {
         for (int i = 0; i < processor->output_tracks->count; i++) {
             track_list_add(previous_tracks, &processor->output_tracks->tracks[i]);
         }
+
+        // --- 新增：将结果推送至异步队列 ---
+        if (processor->config.target_queue) {
+            mec_msg_t msg;
+            msg.sensor_id = processor->config.camera_id;
+            msg.tracks = processor->output_tracks; // 队列内部会执行深拷贝
+            gettimeofday(&msg.timestamp, NULL);
+            mec_queue_push(processor->config.target_queue, &msg);
+        }
         
         thread_unlock(&processor->thread_ctx);
         

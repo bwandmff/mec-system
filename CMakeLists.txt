@@ -22,7 +22,7 @@ include_directories(
 
 # Source files
 file(GLOB_RECURSE COMMON_SOURCES "src/common/*.c")
-file(GLOB_RECURSE VIDEO_SOURCES "src/video/*.c")
+file(GLOB_RECURSE VIDEO_SOURCES "src/video/*.c" "src/video/*.cpp")
 file(GLOB_RECURSE RADAR_SOURCES "src/radar/*.c")
 file(GLOB_RECURSE FUSION_SOURCES "src/fusion/*.c")
 

@@ -2,6 +2,7 @@
 #define MEC_RADAR_H
 
 #include "mec_common.h"
+#include "mec_queue.h"
 
 // Radar configuration
 typedef struct {
@@ -11,6 +12,7 @@ typedef struct {
     double range_resolution;
     double angle_resolution;
     double max_range;
+    mec_queue_t *target_queue; // 目标消息队列
 } radar_config_t;
 
 // Raw radar data structure
