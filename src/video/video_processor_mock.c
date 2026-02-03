@@ -91,8 +91,23 @@ void* video_processing_thread(void *arg) {
 }
 
 // 屏蔽其他 OpenCV 相关的具体实现函数，仅保留符号定义
-int transform_image_to_wgs84(const perspective_transform_t *t, const image_coord_t *i, wgs84_coord_t *w) { return 0; }
-int detect_targets(const void *f, int w, int h, track_list_t *tr) { return 0; }
-int track_targets(track_list_t *p, track_list_t *c) { return 0; }
-int video_processor_set_transform(video_processor_t *p, const perspective_transform_t *t) { return 0; }
-int video_processor_add_region(video_processor_t *p, const detection_region_t *r) { return 0; }
+int transform_image_to_wgs84(const perspective_transform_t *t, const image_coord_t *i, wgs84_coord_t *w) { 
+    (void)t; (void)i; (void)w;
+    return 0; 
+}
+int detect_targets(const void *f, int w, int h, track_list_t *tr) { 
+    (void)f; (void)w; (void)h; (void)tr;
+    return 0; 
+}
+int track_targets(track_list_t *p, track_list_t *c) { 
+    (void)p; (void)c;
+    return 0; 
+}
+int video_processor_set_transform(video_processor_t *p, const perspective_transform_t *t) { 
+    (void)p; (void)t;
+    return 0; 
+}
+int video_processor_add_region(video_processor_t *p, const detection_region_t *r) { 
+    (void)p; (void)r;
+    return 0; 
+}

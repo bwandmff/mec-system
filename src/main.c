@@ -24,34 +24,48 @@ void signal_handler(int sig) {
 }
 
 int main(int argc, char *argv[]) {
-    int sim_mode = 0;
+    int sim_mode_cli = 0;
     char *config_path = "config/mec.conf";
 
     // 1. 命令行参数解析
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--sim") == 0 || strcmp(argv[i], "-s") == 0) {
-            sim_mode = 1;
+            sim_mode_cli = 1;
         } else if (strcmp(argv[i], "-c") == 0 && i + 1 < argc) {
             config_path = argv[++i];
         }
     }
 
-    // 2. 初始化日志系统与性能监控
+    // 2. 加载配置文件
+    config_t *config = config_load(config_path);
+    if (!config && !sim_mode_cli) {
+        // If config fails and not in sim mode via CLI, we can't run.
+        log_init("mec_system.log", LOG_INFO); // Init log just to write the error
+        LOG_ERROR("Failed to load configuration from %s and not in simulation mode. Exiting.", config_path);
+        log_cleanup();
+        return 1;
+    }
+
+    // 3. 确定运行模式 (CLI 优先)
+    int sim_mode = 0;
+    if (sim_mode_cli) {
+        sim_mode = 1;
+    } else if (config) {
+        const char *mode_str = config_get_string(config, "mode", "real");
+        if (strcmp(mode_str, "simulation") == 0) {
+            sim_mode = 1;
+        }
+    }
+
+    // 4. 初始化日志、信号和性能监控
     log_init("mec_system.log", LOG_INFO);
     metrics_init();
     LOG_INFO("MEC System starting... (Mode: %s)", sim_mode ? "Simulation" : "Real Sensors");
     
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
-    
-    // 3. 加载配置文件
-    config_t *config = config_load(config_path);
-    if (!config) {
-        LOG_WARN("Failed to load configuration from %s", config_path);
-        if (!sim_mode) return 1;
-    }
-    
-    // 4. 创建全局异步消息队列 (容量设为 50)
+
+    // 5. 创建全局异步消息队列 (容量设为 50)
     mec_queue_t *msg_queue = mec_queue_create(50);
     if (!msg_queue) {
         LOG_ERROR("Failed to create message queue");
@@ -76,6 +90,7 @@ int main(int argc, char *argv[]) {
     video_processor_t *video_proc = NULL;
     radar_processor_t *radar_proc = NULL;
     mec_simulator_t *simulator = NULL;
+    mec_monitor_t *monitor_service = NULL;
 
     // 6. 启动数据源（模拟器或真实传感器）
     if (sim_mode) {
@@ -123,7 +138,7 @@ int main(int argc, char *argv[]) {
     monitor_config_t mon_cfg = {0};
     strncpy(mon_cfg.socket_path, "/tmp/mec_system.sock", sizeof(mon_cfg.socket_path)-1);
     mon_cfg.fusion_proc = fusion_proc;
-    mec_monitor_t *monitor_service = monitor_start_service(&mon_cfg);
+    monitor_service = monitor_start_service(&mon_cfg);
     
     LOG_INFO("MEC System Running in Asynchronous Mode (Queue: %d msgs limit)", 50);
     

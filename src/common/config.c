@@ -26,22 +26,6 @@ typedef struct {
 
 // The current implementation uses fixed arrays. Let's rewrite to match the dynamic header definition.
 
-static void trim_whitespace(char *str) {
-    char *end;
-    while (*str == ' ' || *str == '\t') str++;
-    if (*str == 0) return;
-    
-    // Shift content to beginning
-    if (str > str) {
-        char *src = str;
-        char *dst = str; // this logic is wrong if we don't know original start.
-        // Easier:
-    }
-    // Re-implement trim more safely for in-place
-    // Actually, the original implementation was modifying the buffer passed in.
-    
-    // Let's use a simple approach: return pointer to first non-space, zero terminate end.
-}
 // Helper to trim in-place (assuming mutable buffer)
 static char* trim(char *str) {
     while(isspace((unsigned char)*str)) str++;

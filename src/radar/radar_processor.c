@@ -198,7 +198,7 @@ int radar_read_data(radar_processor_t *processor, radar_detection_t *detection) 
                     state = STATE_CHECK;
                 }
                 break;
-            case STATE_CHECK:
+            case STATE_CHECK: {
                 // 简单的校验和检查 (Sum Check)
                 unsigned char checksum = 0;
                 for (int i = 0; i < 14; i++) checksum ^= frame_buf[i];
@@ -218,6 +218,11 @@ int radar_read_data(radar_processor_t *processor, radar_detection_t *detection) 
                     LOG_WARN("Radar: Checksum error (Exp: 0x%02X, Got: 0x%02X)", checksum, ch);
                     state = STATE_IDLE;
                 }
+                break;
+            }
+            case STATE_HEAD2:
+                // HEAD2 state not used in current protocol, reset
+                state = STATE_IDLE;
                 break;
         }
     }
